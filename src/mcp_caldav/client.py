@@ -1,5 +1,6 @@
 """CalDAV client for calendar operations."""
 
+import os
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -8,6 +9,7 @@ if TYPE_CHECKING:
 
 try:
     import caldav
+    import niquests
 except ImportError as err:
     raise ImportError(
         "caldav library is not installed. Install it with: pip install caldav"
@@ -315,12 +317,22 @@ class CalDAVClient:
     def connect(self) -> bool:
         """Connect to CalDAV server."""
         try:
-            self.client = caldav.DAVClient(
-                url=self.url,
-                username=self.username,
-                password=self.password,
-            )
-            self.principal = self.client.principal()
+            client_options: dict[str, Any] = {
+                "url": self.url,
+                "username": self.username,
+                "password": self.password,
+            }
+            auth_type = os.getenv("CALDAV_AUTH_TYPE")
+            if auth_type:
+                client_options["auth_type"] = auth_type
+            client = caldav.DAVClient(**client_options)
+            if auth_type == "digest":
+                # Baikal advertises Digest auth. python-caldav's default
+                # session negotiates unsuccessfully with this server, while a
+                # standard niquests session performs the challenge correctly.
+                client.session = niquests.Session()
+            self.client = client
+            self.principal = client.principal()
             return True
         except Exception as e:
             raise ConnectionError(f"Failed to connect to CalDAV server: {e}") from e
